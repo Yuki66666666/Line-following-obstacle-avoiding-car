@@ -3,27 +3,23 @@ import numpy as np
 import time
 import serial
 
-def extract_polygon(img, slice_num=16, LB=np.array([0,0,0]), UB=np.array([180,55,81])):
+def extract_polygon(img, slice_num=16):
     IMG_HEIGHT, IMG_WIDTH, _ = img.shape
     X_DIV = int(IMG_HEIGHT / float(slice_num))
-    kernelOpen = np.ones((5, 5))
-    kernelClose = np.ones((20, 20))
     
     avg_centroids = []
-    # 新增一個列表來保存每個切片中最大的兩個輪廓
     all_contours = []
     centroids = []
     left = []
     right = []
+    img = cv2.blur(img, (5, 5)) 
     for i in range(slice_num):
         sliced_img = img[X_DIV * i:X_DIV * (i + 1), :]
-        blur = cv2.GaussianBlur(sliced_img, (5, 5), 0)
-        imgHSV = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(imgHSV, LB, UB)
-        maskOpen = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernelOpen)
-        maskClose = cv2.morphologyEx(maskOpen, cv2.MORPH_CLOSE, kernelClose)
-        conts, _ = cv2.findContours(maskClose, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        gray = cv2.cvtColor(sliced_img, cv2.COLOR_BGR2GRAY)
+        _, thresholded = cv2.threshold(gray, 43, 255, cv2.THRESH_BINARY_INV)  # 阈值可能需要调整
 
+        conts, _ = cv2.findContours(thresholded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
         if len(conts) >= 2:
             sorted_conts = sorted(conts, key=cv2.contourArea, reverse=True)[:2]
             centroids = []
@@ -66,18 +62,21 @@ def extract_polygon(img, slice_num=16, LB=np.array([0,0,0]), UB=np.array([180,55
 
     return avg_centroids, left, right
 
+
+
+
 def detect_direction(path):
     if not path:
         return "No line detected"
-    get_mid = (path[-1][0] + path[0][0]) / 2  # Change in x
-    
+    #get_mid = (path[-1][0] + path[0][0]) / 2  # Change in x
+    get_mid = sum(point[0] for point in path) / len(path)
     #dy = (path[-1][1] + path[0][1]) / 2  # Change in y
     print(get_mid)
     if get_mid == 0:  # Prevent division by zero
         return "dont move"  # or handle vertical line case 
-    elif get_mid >= 340:
+    elif get_mid >= 350: #get_mid >= 340:
         return "right turn"
-    elif get_mid <= 300:
+    elif get_mid <= 290: #get_mid <= 300:
         return "left turn"
     else:
         return "go straight"
@@ -98,71 +97,167 @@ def detect_direction_one_line(path):
     else:
         slope = (y2 - y1) / (x2 - x1)
         if slope > 0:
-            return "right turn"
-        else:
+            #return "right turn"
             return "left turn"
+        else:
+            #return "left turn"
+            return "right turn"
 
     
     
 cap = cv2.VideoCapture(0)
 IMG_WIDTH = 640
 IMG_HEIGHT = 480
-ser = serial.Serial('/dev/ttyUSB1', 9600)
+ser = serial.Serial('/dev/ttyUSB0', 57600)
+ser.flush()
+
 time.sleep(1)
 count = 0
-prev_dir = ""
+prev_direction = ""
 while True:
+    
+    # 延时一小段时间，以避免过于频繁的读取
+    print (ser.name)
+    input_char = 'd'
+    if ser.in_waiting < 0:
+        input_char = 'd'
+    elif ser.in_waiting > 0:
+        print("ser inwaiting")
+        #input_char = ser.read().decode('utf-8')
+        #input_char = ser.read()
+        input_char = ser.read().decode('utf-8')
+        print(input_char)
+        #print("Read input: " + input_char)
     
     ret, img = cap.read()
     if not ret:
         break
-
+    
     img = cv2.resize(img, (IMG_WIDTH, IMG_HEIGHT))
-    rows_to_keep = int(IMG_HEIGHT * 0.7)
-    #rows_to_keep = int(IMG_HEIGHT * 0.5)
-    img = img[IMG_HEIGHT-rows_to_keep:, :]
-    #avg_path, left, right = extract_polygon(img, 16)
-    avg_path, left, right = extract_polygon(img, 32)
-    
-    if not (avg_path):
-        if (left):
-            direction = detect_direction_one_line(left)
-            print("one line")
-            #time.sleep(5)
-        else:
-            direction = "No line detected"
-    elif (avg_path):
-        direction = detect_direction(avg_path)
-        print("two_lines")
-    
-    print(direction)
-    
-    if (count == 0):
-        count = count + 1
-        prev_dir = direction
-    elif (direction == prev_dir):
-        count = count + 1
-    else:
-        prev_dir = direction
-        count = 1
+    img2 = img
+    get_triangle = 0
+    MIN_AREA = 1000
+    if (input_char == 'c'):
+        get_triangle = 1
+    get_triangle_once = 0
+    if (get_triangle != 1):
+        get_triangle_once = 0
+        rows_to_keep = int(IMG_HEIGHT * 0.5)
+        #rows_to_keep = int(IMG_HEIGHT * 0.5)
         
-    if (direction == "go straight"):
-        ser.write(b'G')
-        #time.sleep(1)
-    elif (direction == "left turn"):
-        ser.write(b'L')
-        #time.sleep(1)
-    elif (direction == "right turn"):
-        ser.write(b'R')
-        #time.sleep(1)
-    elif (direction == "No line detected"):
+        rows_to_keep2 = int(IMG_HEIGHT * 0.8)
+        #img = img[:rows_to_keep2, :]
+        
+        img = img[IMG_HEIGHT-rows_to_keep:, :]
+        #avg_path, left, right = extract_polygon(img, 16)
+        avg_path, left, right = extract_polygon(img, 8)
+        
+        if not (avg_path):
+            if (left):
+                direction = detect_direction_one_line(left)
+                print("one line")
+                #time.sleep(5)
+            else:
+                direction = "No line detected"
+        elif (avg_path):
+            direction = detect_direction(avg_path)
+            print("two_lines")
+        
+        print(direction)
+        
+        
+        #time.sleep(0.15)
+        if (direction == "go straight"):
+            ser.write(b'G')
+            #time.sleep(1)
+        elif (direction == "left turn"):
+            ser.write(b'L')
+            #time.sleep(1)
+        elif (direction == "right turn"):
+            ser.write(b'R')
+            #time.sleep(1)
+        elif (direction == "No line detected"):
+            if (prev_direction == "go straight"):
+                ser.write(b'G')
+                #time.sleep(1)
+            elif (prev_direction == "left turn"):
+                ser.write(b'L')
+                #time.sleep(1)
+            elif (prev_direction == "right turn"):
+                ser.write(b'R')
+            #ser.write(b'H')
+            #time.sleep(1)
+        prev_direction = direction
+    else:
+        print("collide")
         ser.write(b'H')
-        #time.sleep(1)
+        triangle_find = 0
+        count = 0
+        while(triangle_find == 0 and count <= 20 and get_triangle_once == 0):
+            triangle_direction = "left"
+            # 顏色篩選範圍
+            LB = np.array([0, 0, 0])
+            UB = np.array([180, 55, 81])
+            kernelOpen = np.ones((5, 5))
+            kernelClose = np.ones((20, 20))
+            
+            mask = cv2.inRange(img2, LB, UB)
+            maskOpen = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernelOpen)
+            maskClose = cv2.morphologyEx(maskOpen, cv2.MORPH_CLOSE, kernelClose)
 
-    # 繪製原始的中心點和平均中心點
+            # 邊緣檢測
+            edges = cv2.Canny(maskClose, 30, 100)
+
+            # 找尋輪廓
+            contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+            count = count + 1
+            for cnt in contours:
+                # 輪廓近似
+                epsilon = 0.02 * cv2.arcLength(cnt, True)
+                approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+                # 檢查是不是三角形
+                if len(approx) == 3:
+                    # 計算三角形面積
+                    area = cv2.contourArea(cnt)
+                    if area > MIN_AREA:
+                        # 在原始圖像上畫出三角形
+                        #cv2.drawContours(img, [approx], 0, (0, 0, 0), 2)  # 黑色輪廓
+
+                        # 頂點坐標
+                        points = approx.reshape(-1, 2)
+                        
+                        # 在每個頂點畫上彩色圓圈
+                        #cv2.circle(img, tuple(points[0]), 5, (0, 0, 255), -1)  # 紅色
+                        #cv2.circle(img, tuple(points[1]), 5, (0, 255, 255), -1)  # 黃色
+                        #cv2.circle(img, tuple(points[2]), 5, (255, 0, 0), -1)  # 藍色
+
+                        # 根據 Y 值排序頂點
+                        points = sorted(points, key=lambda p: p[1])
+
+                        # 找出中間頂點並比較 X 值
+                        middle_point = points[1]
+                        if middle_point[0] < points[0][0] or middle_point[0] < points[2][0]:
+                            print("三角形頂點在左邊")
+                        else:
+                            print("三角形頂點在右邊")
+                            triangle_direction = "right"
+                            
+                        if triangle_direction == "left" and get_triangle_once != 1:
+                            ser.write(b'L')
+                            get_triangle_once = 1
+                        elif triangle_direction == "right" and get_triangle_once != 1:
+                            ser.write(b'R')
+                            get_triangle_once = 1
+                        triangle_find = 1
+                        time.sleep(1.6)
+        get_triangle_once = 1
+           
+                        
+                        
+
     
-    
-    # 繪製計算出的平均中心點的路徑
+# 繪製計算出的平均中心點的路徑
     if __debug__:
         for i in range(len(avg_path) - 1):
             cv2.line(img, avg_path[i], avg_path[i + 1], (0, 255, 0), 5)
@@ -183,3 +278,5 @@ while True:
 ser.close()
 cap.release()
 cv2.destroyAllWindows()
+
+
