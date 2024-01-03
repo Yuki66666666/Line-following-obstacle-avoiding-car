@@ -6,6 +6,11 @@
 #define PWMB 8  // 定義PWMB為數位腳位8，用於控制電機B的PWM
 #define STBY 7  // 定義STBY為數位腳位7，用於電機驅動板的待機控制
 
+int const trigPin= 12;
+int const echoPin= 11;
+int Duration;
+int Distance;
+
 // 初始化電機函式
 void initMotor(){
   // 將電機控制腳位設定為輸出模式
@@ -47,7 +52,7 @@ void SetPWM(int motor, int pwm) {
 // 以下函式用於控制電機的不同動作（前進、後退、左轉、右轉、停止）
 void forward(int speed) {
   SetPWM(1, speed); // 電機A和B同時前進
-  SetPWM(2, speed);
+  SetPWM(2, -(speed-5));
 }
 
 void back(int speed) {
@@ -56,13 +61,13 @@ void back(int speed) {
 }
 
 void left(int speed) {
-  SetPWM(1, -speed/2); // 電機A減速或後退，電機B正常速度前進，實現左轉
-  SetPWM(2, -speed);
+  SetPWM(1, speed-17); // 電機A減速或後退，電機B正常速度前進，實現左轉
+  SetPWM(2, -speed-10);//10);
 }
 
 void right(int speed) {
-  SetPWM(1, speed);  // 電機A正常速度前進，電機B減速或後退，實現右轉
-  SetPWM(2, -speed/2);
+  SetPWM(1, speed+24);//18);//30);  // 電機A正常速度前進，電機B減速或後退，實現右轉
+  SetPWM(2, -speed+8);//15);
 }
 
 void stopp() {
@@ -72,29 +77,60 @@ void stopp() {
 
 
 void setup() {
-  Serial.begin(9600); // 开启串行通信，波特率设置为57600
+  Serial.begin(57600); // 开启串行通信，波特率设置为57600
   initMotor(); // 初始化電機
+  pinMode(trigPin,OUTPUT);
+  pinMode(echoPin,INPUT);
+  digitalWrite(trigPin,LOW);
 }
+long duration, cm;
+unsigned long previousMillis = 0;  // stores the last time the ultrasonic sensor was updated
+const long interval = 300;        // interval at which to run the ultrasonic sensor (milliseconds)
 
 void loop() {
-  if (Serial.available() > 0) {
-    char command = Serial.read(); // 读取接收到的命令
+  unsigned long currentMillis = millis();
 
-    // 如果接收到 'A'，则向串行端口发送响应
-    
+  // Check if three seconds have passed; if so, run the ultrasonic sensor code
+  if (currentMillis - previousMillis >= interval) {
+    // save the last time the ultrasonic sensor was updated
+    previousMillis = currentMillis;
+
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(5);
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
+    pinMode(echoPin, INPUT);
+    duration = pulseIn(echoPin, HIGH);
+    cm = (duration/2) / 29.1;
+    if (cm < 34){
+      Serial.print("c");
+    }
+  }
+
+  // Rest of your code goes here (handling commands from the serial port)
+  char command = Serial.read(); // 读取接收到的命令
+
+  // Handling commands (G, L, R, H)
     if (command == 'G') {
-      Serial.print("go straight");
-      forward(50);
+      //Serial.print("go straight");
+      forward(25);//50);
     }else if (command == 'L'){
-      Serial.print("go left");
-      left(50);
+      //Serial.print("go left");
+      left(25);//38);
+      //delay(100);
+      //stopp();
+      //delay(100);
+      //left(60);
     }else if (command == 'R'){
-      Serial.print("go right");
-      right(50);
+      //Serial.print("go right");
+      right(25);//38);
+      //delay(100);
+      //stopp();
+      //delay(100);
+      //right(60);
     }else if (command == 'H'){
-      Serial.print("stop");
+      //Serial.print("stop");
       stopp();
     }
-    
-  }
 }
