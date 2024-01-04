@@ -114,8 +114,96 @@ ser.flush()
 time.sleep(1)
 count = 0
 prev_direction = ""
+
+start_time = time.time()
 while True:
-    
+    elapsed_time = time.time() - start_time
+    print(elapsed_time)
+    while(elapsed_time >= 180):
+        MIN_AREA = 60000  # Minimum area to be considered a quadrilateral
+        MAX_QUADS = 3   # Maximum number of quadrilaterals to detect
+
+        # Colors in BGR format
+        COLORS = [(0, 0, 255), (255, 0, 0), (0, 255, 0)]  # Red, Blue, Green
+
+        ret, img = cap.read()
+        if not ret:
+            break
+
+        img = cv2.resize(img, (IMG_WIDTH, IMG_HEIGHT))
+        
+        # Convert to grayscale and apply threshold
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        ret, binary = cv2.threshold(gray, 70, 255, cv2.THRESH_BINARY)
+        
+        # Find contours
+        contours, hierarchy = cv2.findContours(binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        # List to store areas and contours
+        quadrilaterals = []
+
+        # Find quadrilaterals
+        for cnt in contours:
+            epsilon = 0.02 * cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+            if len(approx) == 4:
+                area = cv2.contourArea(cnt)
+                if area > MIN_AREA and area < 200000:
+                    quadrilaterals.append((area, approx))
+                    countt = 0
+                    while(1):
+                        print("end")
+                        if countt == 0:
+                            ser.write(b'E')
+                            time.sleep(1000)
+
+        # Sort quadrilaterals by area and take the three largest
+        quadrilaterals.sort(key=lambda x: x[0], reverse=True)
+        quadrilaterals = quadrilaterals[:MAX_QUADS]
+
+        # Draw the three largest quadrilaterals with specified colors and print their areas
+        for i, (area, quad) in enumerate(quadrilaterals):
+            cv2.drawContours(img, [quad], 0, COLORS[i], 2)
+            # Find position for text
+            M = cv2.moments(quad)
+            if M["m00"] != 0:
+                cX = int(M["m10"] / M["m00"])
+                cY = int(M["m01"] / M["m00"])
+            else:
+                cX, cY = 0, 0
+            # Put text on the image
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            text = f"Area: {area:.2f}"
+            cv2.putText(img, text, (cX - 50, cY), font, 0.5, COLORS[i], 2)
+
+        # Display the image
+        cv2.imshow('img with Quadrilaterals', img)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+        #cap.release()
+        #cv2.destroyAllWindows()    
+        
+        input_char = 'd'
+        if ser.in_waiting < 0:
+            input_char = 'd'
+        elif ser.in_waiting > 0:
+            print("ser inwaiting")
+            #input_char = ser.read().decode('utf-8')
+            #input_char = ser.read()
+            input_char = ser.read().decode('utf-8')
+            print(input_char)
+            #print("Read input: " + input_char)
+        if (input_char == 'c'):
+            ser.write(b'L')
+            time.sleep(1.5)
+            print("collide, left")
+            input_char = 'd'
+        else:
+            ser.write(b'G')
+            print("keep going")
+            
     # 延时一小段时间，以避免过于频繁的读取
     print (ser.name)
     input_char = 'd'
@@ -278,5 +366,3 @@ while True:
 ser.close()
 cap.release()
 cv2.destroyAllWindows()
-
-
