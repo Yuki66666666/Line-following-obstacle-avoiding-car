@@ -132,5 +132,14 @@ void loop() {
     }else if (command == 'H'){
       //Serial.print("stop");
       stopp();
+    }else if (command == 'E'){
+      unsigned long currentMillis = millis();
+      
+      forward(25);
+      Serial.println(currentMillis);
+      delay(12000);
+      stopp();
+      delay(10000000);
+      
     }
 }
